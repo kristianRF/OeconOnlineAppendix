@@ -297,3 +297,32 @@ def loan_portfolio(j: int = 125, n: float = 1000, V: float = 100, B: float = 50,
             if t == T: bond_paths[t,:,:] = np.minimum(asset_paths[t,:,:], B)
             else: bond_paths[t,:,:] = mv_bond(asset_paths[t,:,:], B, (T - t), rf, sigma_star)
         return bond_paths.sum(axis=2)
+    
+def clo_payoffs(V: np.ndarray, tranches: np.ndarray):
+    """
+    Payoffs to CLO tranches. Equity-tranche shouldn't be included
+    ______________________________________________________________
+    Parameters:
+        V (np.ndarray): A 1d numpy array of simulated asset paths
+        tranches (np.ndarray):  A 1-d numpy array of the tranche sizes
+    Returns: 
+        payoffs (np.ndarray): A numpy array of the payoffs to each trance 
+            Dimensions: (tranches, simulations)
+    """
+    num_tranches = len(tranches)
+    
+    payoffs = np.zeros((num_tranches + 1, V.shape[0]))
+
+    for _class in range(0, num_tranches):
+        Dcum = tranches[ : _class].sum()
+        Dcum_p1 = tranches[ : _class + 1].sum()
+        
+        if _class == 0: # First Tranche
+            payoffs[_class,:] = np.minimum(V, Dcum_p1)
+        else:
+            payoffs[_class,:] = np.maximum(V - Dcum, 0) - np.maximum(V - Dcum_p1, 0)
+    
+    payoffs[num_tranches] = np.maximum(V - tranches.sum(), 0)
+    
+    return payoffs
+
