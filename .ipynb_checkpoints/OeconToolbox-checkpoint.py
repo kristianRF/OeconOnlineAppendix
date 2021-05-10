@@ -376,7 +376,7 @@ def loan_portfolio_PP(j: int = 125, n: float = 1000, V: float = 100, B: float = 
     # Initialize Numpy Arrays
     nc_loan_paths, call_mat, nc_cfs_mat,  pf_cfs, call_cfs_mat = [np.zeros_like(asset_paths) for _ in range(5)]
 
-    # Determine Callable Loan Yield
+    # Determine Call Dates
     for t in range(0, T + 1):
         cond1 = (call_mat[:t,:,:].sum(axis = 0) == 0)
         if t == 0:
@@ -395,12 +395,10 @@ def loan_portfolio_PP(j: int = 125, n: float = 1000, V: float = 100, B: float = 
         if t == T:
             call_cfs_mat[t,:,:] = np.minimum(asset_paths[t,:,:], B) * call_mat[t,:,:]
         else:
-            call_cfs_mat[t,:,:] = B * np.exp(-yc * (T - t)) * call_mat[t,:,:]
-    
-    df_vec = np.exp(rf * np.linspace(0, T, T+1)).reshape((T+1,1))
+            call_cfs_mat[t,:,:] = B * np.exp(-yc * (T-t)) * call_mat[t,:,:]
     
     for t in range(0, T + 1):
-        pf_cfs[t,:,:] = call_cfs_mat[t,:,:] * df_vec[t]
+        pf_cfs[t,:,:] = call_cfs_mat[t,:,:] #* np.exp(-rf * t)
     
     pf_cfs = pf_cfs.sum(axis=2)
 
