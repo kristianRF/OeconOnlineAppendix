@@ -244,59 +244,6 @@ def cash_flow_matrix(Bt: np.ndarray, Ct: np.ndarray, face_val: float, yld: float
             
     return cf_t
 
-def loan_portfolio(j: int = 125, n: float = 1000, V: float = 100, B: float = 50, T: float = 1, rf: float = 0, rm: float = .01, beta: float = 1, sigmaI: float = 0, sigmaM: float = 0, risk_neutral: bool = False, paths: bool = False, seed: int = 1234):
-    """
-    Generates n random outcomes of cash flows in a SPV loan portfolio
-    ______________________________________________________________
-    Parameters:
-        j (int): Number of loans
-        n (int): number of simulations
-        V (float): The total asset value
-        B (float): The face value of debt
-        T (float): Number of periods
-        rf (float): The risk free rate
-        rm (float): The market return
-        beta (float): CAPM Beta
-        sigmaM (float): Market Risk
-        sigmaI (float): Idiosyncratic Risk
-        risk_neutral (bool): True if using the risk-neutral Q-measure
-        paths (bool): if True then return portfolio paths, if False return sorted cash flow matrix
-        seed (int): Random seed
-    Returns:
-        if paths == True:
-            n-simulations of the SPV portfolio value in all periods
-        if paths == False:
-            The final payoffs from the SPV as well as the market factor
-    """
-    # Auxiliary equations:
-    sigma_star = sigma_beta_adj(beta, sigmaM, sigmaI)
-    mu = rf + beta * (rm - rf)
-    
-    random_state = np.random.RandomState(seed)
-    random = random_state.standard_normal(size=(T + 1, n, j + 1))
-    
-    def asset_gbm(x,ttm):
-        drift = (x - 0.5 * sigma_star ** 2)
-        diffusion = (beta * sigmaM * random[:,:,0].reshape((T + 1,n,1))) + (sigmaI * random[:,:,1:])
-        increments = drift + diffusion
-        increments[0] = 0
-        return V * np.exp(increments.cumsum(axis=0))
-    
-    if risk_neutral == False: asset_paths = asset_gbm(mu,T)
-    else: asset_paths = asset_gbm(rf,T)
-            
-    if paths == False: 
-        terminal_value = asset_paths[-1,:,:]
-        cash_flows = np.minimum(terminal_value, B).sum(axis=1)
-        sort = cash_flows.argsort()
-        return cash_flows[sort], random[1:,:,0].sum(axis=0)[sort]
-    else:                                              
-        bond_paths = np.zeros_like(asset_paths)
-        for t in range(0, T + 1):
-            if t == T: bond_paths[t,:,:] = np.minimum(asset_paths[t,:,:], B)
-            else: bond_paths[t,:,:] = mv_bond(asset_paths[t,:,:], B, (T - t), rf, sigma_star)
-        return bond_paths.sum(axis=2)
-    
 def clo_payoffs(V: np.ndarray, tranches: np.ndarray):
     """
     Payoffs to CLO tranches. Equity-tranche shouldn't be included
@@ -325,89 +272,22 @@ def clo_payoffs(V: np.ndarray, tranches: np.ndarray):
     
     return payoffs
 
-def loan_portfolio_PP(j: int = 125, n: float = 1000, V: float = 100, B: float = 50, yields: tuple = (0.01, 0.01), T: float = 1, rf: float = 0, rm: float = .01, beta: float = 1, sigmaI: float = 0, sigmaM: float = 0, penalty: float = 0, risk_neutral: bool = False, paths: bool = False, seed: int = 1234):
+def tranche_sizes(default_table, payoffs, T: int = 1, I: int = 7):
     """
-    Generates n random outcomes of cash flows in a SPV loan portfolio
+    Generates 1d Numpy Array of tranche sizes
     ______________________________________________________________
     Parameters:
-        j (int): Number of loans
-        n (int): number of simulations
-        V (float): The total asset value
-        B (float): The face value of debt
-        yields (tuple): (Yield on non-callable debt, Yield on callable debt)
-        T (float): Number of periods
-        rf (float): The risk free rate
-        rm (float): The market return
-        beta (float): CAPM Beta
-        sigmaM (float): Market Risk
-        sigmaI (float): Idiosyncratic Risk
-        penalty (float): Penalty to refinancing
-        risk_neutral (bool): True if using the risk-neutral Q-measure
-        paths (bool): if True then return portfolio paths, if False return sorted cash flow matrix
-        seed (int): Random seed
-    Returns:
-        if paths == True:
-            n-simulations of the SPV portfolio value in all periods
-        if paths == False:
-            The final payoffs from the SPV as well as the market factor
+        default_table (pd.DataFrame): The cumulative default table, with ratings as index and time-to-maturity as columns. 
+        payoffs (np.ndarray): The simulated payoff array
+        T (int): Time to maturity
+        I (int): Number of tranches, incl. equity
     """
-    # Auxiliary equations:
-    ync, yc = yields
-    
-    sigma_star = sigma_beta_adj(beta, sigmaM, sigmaI)
-    mu = rf + beta * (rm - rf)
-    
-    random_state = np.random.RandomState(seed)
-    random = random_state.standard_normal(size=(T + 1, n, j + 1))
-    
-    call_barrier = np.flip(B * np.exp(-ync * np.linspace(0,T,T+1)) - penalty).reshape((T+1,1))
-    
-    # Generate Asset Paths:
-    def asset_gbm(x,ttm):
-        drift = (x - 0.5 * sigma_star ** 2)
-        diffusion = (beta * sigmaM * random[:,:,0].reshape((T + 1,n,1))) + (sigmaI * random[:,:,1:])
-        increments = drift + diffusion
-        increments[0] = 0
-        return V * np.exp(increments.cumsum(axis=0))
-    
-    if risk_neutral == False: asset_paths = asset_gbm(mu,T)
-    else: asset_paths = asset_gbm(rf,T)
-    
-    # Initialize Numpy Arrays
-    nc_loan_paths, call_mat, nc_cfs_mat,  pf_cfs, call_cfs_mat = [np.zeros_like(asset_paths) for _ in range(5)]
-
-    # Determine Call Dates
-    for t in range(0, T + 1):
-        cond1 = (call_mat[:t,:,:].sum(axis = 0) == 0)
-        if t == 0:
-            nc_loan_paths[t,:,:] = mv_bond(asset_paths[t,:,:], B, (T - t), rf, sigma_star)
-        elif t == T:
-            nc_loan_paths[t,:,:] = np.minimum(asset_paths[t,:,:], B)
-            call_mat[t,:,:] = np.where(cond1, 1, 0)
-            nc_cfs_mat[t,:,:] = nc_loan_paths[t,:,:] * call_mat[t,:,:]
-        else:
-            nc_loan_paths[t,:,:] = mv_bond(asset_paths[t,:,:], B, (T - t), rf, sigma_star)
-            call_mat[t,:,:] = np.where((nc_loan_paths[t,:,:] - call_barrier[t] > 0) & cond1, 1, 0)
-            nc_cfs_mat[t,:,:] = B * np.exp(-ync * (T - t)) * call_mat[t,:,:]
-    
-    # Determine Cash Flows to SPV
-    for t in range(0, T + 1):
-        if t == T:
-            call_cfs_mat[t,:,:] = np.minimum(asset_paths[t,:,:], B) * call_mat[t,:,:]
-        else:
-            call_cfs_mat[t,:,:] = B * np.exp(-yc * (T-t)) * call_mat[t,:,:]
-    
-    for t in range(0, T + 1):
-        pf_cfs[t,:,:] = call_cfs_mat[t,:,:] #* np.exp(-rf * t)
-    
-    pf_cfs = pf_cfs.sum(axis=2)
-
-    if paths == False: 
-        pf_value = pf_cfs.sum(axis=0)
-        sort = pf_value.argsort()
-        return pf_value[sort], random[1:,:,0].sum(axis=0)[sort]
-    else:
-        pf_cfs.sort()
-        return pf_cfs
-
-    
+    total, tranches = np.zeros(I), np.zeros(I)
+    i = 0
+    for rating, def_prob in default_table[T].items():
+        total[i]  = np.quantile(payoffs, def_prob/100)
+        if i == 0 : tranches[i] = np.quantile(payoffs, def_prob/100)
+        else: tranches[i] = np.quantile(payoffs, def_prob/100) - total[i-1].sum(axis=0)
+        i = i + 1
+    tranches[i] = np.quantile(payoffs, 1) - total[i-1].sum(axis=0)
+    return tranches
