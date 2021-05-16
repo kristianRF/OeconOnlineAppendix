@@ -2,11 +2,9 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import math
-import seaborn as sns
 
 import OeconToolbox as ott
 import LoanPortfolioTool as pft
-
 
 # Corporate Issuer Parameters
 V0 = 100      # Initial Asset Value
@@ -18,7 +16,7 @@ sigma_m = .14 # Market Risk
 ttm = 5       # Time to Maturity of Debt
 penalty = 0   # Penalty on prepayment
 loan_rating = 'B'
-num_tranches = 6  # number of tranches including equity
+SPV_rating = 'B'
 
 # SPV Parameters
 J = 125    # number of loans
@@ -70,20 +68,24 @@ SPV_Q_pp, _, equity_Q_pp = loan_portfolios.with_prepayments(default_table = DefT
                                                             penalty = penalty)
 
 SPV_P_pp, M_pp, equity_P_pp = loan_portfolios.with_prepayments(default_table = DefTable,
-                                                               rating='B',
+                                                               rating=loan_rating,
                                                                mv_callable=mv_call,
                                                                risk_neutral = False,
                                                                penalty=penalty)
 
 print("Mean payoffs under Q and P: {0:0.2f} and {1:0.2f} (with prepayments)".format(SPV_Q_pp.mean(), SPV_P_pp.mean()))
 
-wacd = ott.zero_yield(SPV_Q.mean()*np.exp(-rf*ttm),np.quantile(SPV_P, DefTable.loc[loan_rating,ttm]/100),ttm)
-adj_wacd = ott.zero_yield(SPV_Q_pp.mean() * np.exp(-rf*ttm),
-                          np.quantile(SPV_P,DefTable.loc[loan_rating,ttm]/100),
+SPV_MV = np.minimum(SPV_Q, np.quantile(SPV_P,DefTable.loc[SPV_rating,ttm]/100)).mean() * np.exp(-rf*ttm)
+SPV_MV_pp = np.minimum(SPV_Q_pp, np.quantile(SPV_P_pp,DefTable.loc[SPV_rating,ttm]/100)).mean() * np.exp(-rf*ttm)
+
+wacd = ott.zero_yield(SPV_MV,
+                      np.quantile(SPV_P,
+                                  DefTable.loc[SPV_rating,ttm]/100),
+                      ttm)
+adj_wacd = ott.zero_yield(SPV_MV_pp,
+                          np.quantile(SPV_P,
+                                      DefTable.loc[SPV_rating,ttm]/100),
                           ttm)
 
 print("Results:\n---------\n 1) Yield: {0:0.2f}%,\n 2) Adj. Yield: {1:0.2f}% and\n 3) Mispricing: {2:0.2f}%".format(wacd*100,adj_wacd*100,(adj_wacd-wacd)*100))
-
-
-
 
