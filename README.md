@@ -4,6 +4,7 @@ This is the online appendix for our final thesis, presented for the MSc Advanced
 
 --------------
 Title: Collateralized Loan Obligations
+
 Subtitle: A Structural Model for Pricing Tranche Spreads in a Corporate Loan Securitization
 
 Authors: Rasmus Hoffmann and Kristian Rumph Frederiksen
